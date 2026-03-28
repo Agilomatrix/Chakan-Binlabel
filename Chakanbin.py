@@ -538,15 +538,15 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
 
         # ─── Bottom section: MTM boxes now use 135 KW, 60 KW, C, 4W ───
         # Make boxes slightly wider to accommodate longer labels
-        mtm_box_width = 1.55*cm  # slightly narrower while still fitting "135 KW"
-        mtm_row_height = 1.5*cm
+        mtm_box_width = 1.60*cm  # slightly narrower while still fitting "135 KW"
+        mtm_row_height = 1.55*cm
 
         # Helper style for MTM header labels
         def mtm_label_style(name):
             return ParagraphStyle(
                 name=name,
                 fontName='Helvetica-Bold',
-                fontSize=9,
+                fontSize=8,
                 alignment=TA_CENTER,
                 leading=10
             )
