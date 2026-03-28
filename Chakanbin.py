@@ -538,17 +538,17 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
 
         # ─── Bottom section: MTM boxes now use 135 KW, 60 KW, C, 4W ───
         # Make boxes slightly wider to accommodate longer labels
-        mtm_box_width = 1.8*cm   # wider than original 1.2cm to fit "135 KW"
+        mtm_box_width = 1.55*cm  # slightly narrower while still fitting "135 KW"
         mtm_row_height = 1.5*cm
 
-        # Helper style for MTM header labels (smaller font to fit in box)
+        # Helper style for MTM header labels
         def mtm_label_style(name):
             return ParagraphStyle(
                 name=name,
                 fontName='Helvetica-Bold',
-                fontSize=7,
+                fontSize=9,
                 alignment=TA_CENTER,
-                leading=8
+                leading=10
             )
 
         def mtm_value_style(name):
@@ -587,7 +587,7 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
         ]))
 
         # QR code
