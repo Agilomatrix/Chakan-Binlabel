@@ -88,11 +88,11 @@ def find_bus_model_column(df_columns):
 
 def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
     """
-    Improved bus model detection that properly matches bus model to MTM box
-    Returns a dictionary with keys '4W', '3WS', '3WM','3WC' and their respective quantities
+    Improved bus model detection that properly matches bus model to MTM box.
+    Returns a dictionary with keys '135 KW', '60 KW', 'C', '4W' and their respective quantities.
     """
-    # Initialize result dictionary
-    result = {'4W': '', '3WS': '', '3WM': '', '3WC': ''}
+    # Initialize result dictionary with new bus models
+    result = {'135 KW': '', '60 KW': '', 'C': '', '4W': ''}
     
     # Get quantity value
     qty_veh = ""
@@ -102,49 +102,43 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
     if not qty_veh:
         return result
     
-    # Method 1: Check if quantity already contains model info (e.g., "3WS:2", "4W: 3", "3WM: 5", "3WC: 6")
-    qty_pattern = r'(\d+W[SMC]?)[:\-\s]*(\d+)'
-    matches = re.findall(qty_pattern, qty_veh.upper())
-    
-    if matches:
-        # If we found model-quantity pairs in the qty_veh field itself
-        for model, quantity in matches:
-            if model in result:
-                result[model] = quantity
+    # Method 1: Check if quantity already contains model info
+    # e.g., "135KW:2", "60KW: 3", "C: 5", "4W: 6"
+    qty_upper = qty_veh.upper()
+
+    # Check for "135 KW" or "135KW"
+    match = re.search(r'135\s*KW[:\-\s]*(\d+)', qty_upper)
+    if match:
+        result['135 KW'] = match.group(1)
+
+    # Check for "60 KW" or "60KW"
+    match = re.search(r'60\s*KW[:\-\s]*(\d+)', qty_upper)
+    if match:
+        result['60 KW'] = match.group(1)
+
+    # If any model-qty pairs found via Method 1, return early
+    if any(result.values()):
         return result
-    
+
     # Method 2: Look for bus model in dedicated bus model column first
     detected_model = None
     if bus_model_col and bus_model_col in row and pd.notna(row[bus_model_col]):
         bus_model_value = str(row[bus_model_col]).strip().upper()
         
         # Check for exact matches first
-        if bus_model_value in ['4W', '4']:
+        if re.search(r'135\s*KW', bus_model_value):
+            detected_model = '135 KW'
+        elif re.search(r'60\s*KW', bus_model_value):
+            detected_model = '60 KW'
+        elif bus_model_value in ['C']:
+            detected_model = 'C'
+        elif bus_model_value in ['4W', '4']:
             detected_model = '4W'
-        elif bus_model_value in ['3WS', '3S']:
-            detected_model = '3WS'
-        elif bus_model_value in ['3WM', '3M']:
-            detected_model = '3WM'
-        elif bus_model_value in ['3WC', '3C']:
-            detected_model = '3WC'
-        # Check for patterns within the text
+        # Check for word-boundary patterns
         elif re.search(r'\b4W\b', bus_model_value):
             detected_model = '4W'
-        elif re.search(r'\b3WS\b', bus_model_value):
-            detected_model = '3WS'
-        elif re.search(r'\b3WM\b', bus_model_value):
-            detected_model = '3WM'
-        elif re.search(r'\b3WC\b', bus_model_value):
-            detected_model = '3WC'
-        # Check for standalone numbers
-        elif re.search(r'\b4\b', bus_model_value):
-            detected_model = '4W'
-        elif re.search(r'\b3S\b', bus_model_value):
-            detected_model = '3WS'
-        elif re.search(r'\b3M\b', bus_model_value):
-            detected_model = '3WM'
-        elif re.search(r'\b3C\b', bus_model_value):
-            detected_model = '3WC'
+        elif re.search(r'\bC\b', bus_model_value):
+            detected_model = 'C'
     
     # If we found a model in the dedicated column, use it
     if detected_model:
@@ -152,14 +146,12 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
         return result
     
     # Method 3: Search through all columns systematically with priority
-    # First, search in columns that are most likely to contain bus model info
     priority_columns = []
     other_columns = []
     
     for col in row.index:
         if pd.notna(row[col]):
             col_upper = str(col).upper()
-            # High priority columns
             if any(keyword in col_upper for keyword in ['MODEL', 'BUS', 'VEHICLE', 'TYPE']):
                 priority_columns.append(col)
             else:
@@ -170,31 +162,17 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
         if pd.notna(row[col]):
             value_str = str(row[col]).upper()
             
-            # Look for exact matches first
-            if re.search(r'\b4W\b', value_str):
+            if re.search(r'135\s*KW', value_str):
+                result['135 KW'] = qty_veh
+                return result
+            elif re.search(r'60\s*KW', value_str):
+                result['60 KW'] = qty_veh
+                return result
+            elif re.search(r'\bC\b', value_str):
+                result['C'] = qty_veh
+                return result
+            elif re.search(r'\b4W\b', value_str):
                 result['4W'] = qty_veh
-                return result
-            elif re.search(r'\b3WS\b', value_str):
-                result['3WS'] = qty_veh
-                return result
-            elif re.search(r'\b3WM\b', value_str):
-                result['3WM'] = qty_veh
-                return result
-            elif re.search(r'\b3WC\b', value_str):
-                result['3WC'] = qty_veh
-                return result
-            # Then look for standalone numbers in context
-            elif re.search(r'\b4\b', value_str) and any(keyword in value_str for keyword in ['BUS', 'METER', 'M']):
-                result['4W'] = qty_veh
-                return result
-            elif re.search(r'\b3S\b', value_str) and any(keyword in value_str for keyword in ['BUS', 'METER', 'M']):
-                result['3WS'] = qty_veh
-                return result
-            elif re.search(r'\b3M\b', value_str) and any(keyword in value_str for keyword in ['BUS', 'METER', 'M']):
-                result['3WM'] = qty_veh
-                return result
-            elif re.search(r'\b3C\b', value_str) and any(keyword in value_str for keyword in ['BUS', 'METER', 'M']):
-                result['3WC'] = qty_veh
                 return result
     
     # Method 4: Search in other columns as fallback
@@ -203,41 +181,38 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
         if pd.notna(row[col]):
             value_str = str(row[col]).upper()
             
-            # Use word boundaries to avoid false matches
-            if re.search(r'\b4W\b', value_str):
+            if re.search(r'135\s*KW', value_str):
+                detected_models.append('135 KW')
+            elif re.search(r'60\s*KW', value_str):
+                detected_models.append('60 KW')
+            elif re.search(r'\bC\b', value_str):
+                detected_models.append('C')
+            elif re.search(r'\b4W\b', value_str):
                 detected_models.append('4W')
-            elif re.search(r'\b3WS\b', value_str):
-                detected_models.append('3WS')
-            elif re.search(r'\b3WM\b', value_str):
-                detected_models.append('3WM')
-            elif re.search(r'\b3WC\b', value_str):
-                detected_models.append('3WC')
     
     # Remove duplicates while preserving order
     detected_models = list(dict.fromkeys(detected_models))
     
     if detected_models:
-        # Use the first detected model
         result[detected_models[0]] = qty_veh
         return result
     
-    # Method 5: Last resort - look for standalone numbers that might indicate bus length
+    # Method 5: Last resort - exact cell value match
     for col in row.index:
         if pd.notna(row[col]):
-            value_str = str(row[col]).strip()
+            value_str = str(row[col]).strip().upper()
             
-            # Look for exact matches of just the number
-            if value_str == '4':
+            if re.match(r'^135\s*KW$', value_str):
+                result['135 KW'] = qty_veh
+                return result
+            elif re.match(r'^60\s*KW$', value_str):
+                result['60 KW'] = qty_veh
+                return result
+            elif value_str == 'C':
+                result['C'] = qty_veh
+                return result
+            elif value_str in ['4W', '4']:
                 result['4W'] = qty_veh
-                return result
-            elif value_str == '3S':
-                result['3WS'] = qty_veh
-                return result
-            elif value_str == '3M':
-                result['3WM'] = qty_veh
-                return result
-            elif value_str == '3C':
-                result['3WC'] = qty_veh
                 return result
     
     # Method 6: If still no model detected, return empty (no boxes filled)
@@ -248,27 +223,21 @@ def generate_qr_code(data_string):
     Generate a QR code from the given data string
     """
     try:
-        # Create QR code instance
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_M,
             box_size=10,
             border=4,
         )
-        
-        # Add data
         qr.add_data(data_string)
         qr.make(fit=True)
         
-        # Create QR code image
         qr_img = qr.make_image(fill_color="black", back_color="white")
         
-        # Convert PIL image to bytes that reportlab can use
         img_buffer = BytesIO()
         qr_img.save(img_buffer, format='PNG')
         img_buffer.seek(0)
         
-        # Create a QR code image with specified size
         return Image(img_buffer, width=2.2*cm, height=2.2*cm)
     except Exception as e:
         st.error(f"Error generating QR code: {e}")
@@ -278,41 +247,32 @@ def generate_qr_code(data_string):
 
 def parse_location_string(location_str):
     """Parse a location string into components for table display"""
-    # Initialize with empty values
     location_parts = [''] * 7
     if not location_str or not isinstance(location_str, str):
         return location_parts
-    # Remove any extra spaces
     location_str = location_str.strip()
-    # Try to parse location components
     import re
     pattern = r'([^_\s]+)'
     matches = re.findall(pattern, location_str)
-    # Fill the available parts
     for i, match in enumerate(matches[:7]):
         location_parts[i] = match
     return location_parts
 
 def extract_location_data_from_excel(row_data):
     """Extract location data from Excel row for Line Location"""
-    # Get all available columns for debugging
     available_cols = list(row_data.index) if hasattr(row_data, 'index') else []
     
-    # Try different variations of column names (case-insensitive)
     def find_column_value(possible_names, default=''):
         for name in possible_names:
-            # Try exact match first
             if name in row_data:
                 val = row_data[name]
                 return str(val) if pd.notna(val) and str(val).lower() != 'nan' else default
-            # Try case-insensitive match
             for col in available_cols:
                 if isinstance(col, str) and col.upper() == name.upper():
                     val = row_data[col]
                     return str(val) if pd.notna(val) and str(val).lower() != 'nan' else default
         return default
     
-    # Extract values with multiple possible column names
     bus_model = find_column_value(['Bus Model', 'Bus model', 'BUS MODEL', 'BUSMODEL', 'Bus_Model'])
     station_no = find_column_value(['Station No', 'Station no', 'STATION NO', 'STATIONNO', 'Station_No'])
     rack = find_column_value(['Rack', 'RACK', 'rack'])
@@ -331,7 +291,6 @@ def extract_store_location_data_from_excel(row_data):
             return str(val)
         return default
     
-    # Extract ABB values from Excel columns with proper NaN handling
     zone = get_clean_value('ABB ZONE', '')
     location = get_clean_value('ABB LOCATION', '')
     floor = get_clean_value('ABB FLOOR', '')
@@ -341,6 +300,7 @@ def extract_store_location_data_from_excel(row_data):
     no = get_clean_value('ABB NO', '')
     
     return [zone, location, floor, rack_no, level_in_rack, cell, no]
+
 def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=None):
     """Generate sticker labels with QR code from Excel data"""
     if status_callback:
@@ -348,19 +308,16 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
     else:
         st.write(f"Processing file: {excel_file_path}")
 
-    # Create a function to draw the border box around content
     def draw_border(canvas, doc):
         canvas.saveState()
-        # Draw border box around the content area (10cm x 7.5cm)
-        # Position it at the top of the page with minimal margin
         x_offset = (STICKER_WIDTH - CONTENT_BOX_WIDTH) / 2
-        y_offset = STICKER_HEIGHT - CONTENT_BOX_HEIGHT - 0.2*cm  # Position at top with minimal margin
-        canvas.setStrokeColor(colors.Color(0, 0, 0, alpha=0.95))  # Slightly darker black (95% opacity)
-        canvas.setLineWidth(1.8)  # Slightly thicker border
+        y_offset = STICKER_HEIGHT - CONTENT_BOX_HEIGHT - 0.2*cm
+        canvas.setStrokeColor(colors.Color(0, 0, 0, alpha=0.95))
+        canvas.setLineWidth(1.8)
         canvas.rect(
             x_offset + doc.leftMargin,
             y_offset,
-            CONTENT_BOX_WIDTH - 0.2*cm,  # Account for margins
+            CONTENT_BOX_WIDTH - 0.2*cm,
             CONTENT_BOX_HEIGHT
         )
         canvas.restoreState()
@@ -404,11 +361,9 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
     desc_col = next((col for col in cols if 'DESC' in col),
                    next((col for col in cols if 'NAME' in col), cols[1] if len(cols) > 1 else part_no_col))
 
-    # Look specifically for "QTY/BIN" column first, then fall back to general QTY column
     qty_bin_col = next((col for col in cols if 'QTY/BIN' in col or 'QTY_BIN' in col or 'QTYBIN' in col), 
                   next((col for col in cols if 'QTY' in col and 'BIN' in col), None))
     
-    # If no specific QTY/BIN column is found, fall back to general QTY column
     if not qty_bin_col:
         qty_bin_col = next((col for col in cols if 'QTY' in col),
                       next((col for col in cols if 'QUANTITY' in col), None))
@@ -416,14 +371,11 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
     loc_col = next((col for col in cols if 'LOC' in col or 'POS' in col or 'LOCATION' in col),
                    cols[2] if len(cols) > 2 else desc_col)
 
-    # Improved detection of QTY/VEH column
     qty_veh_col = next((col for col in cols if any(term in col for term in ['QTY/VEH', 'QTY_VEH', 'QTY PER VEH', 'QTYVEH', 'QTYPERCAR', 'QTYCAR', 'QTY/CAR'])), None)
 
-    # Look for store location column
     store_loc_col = next((col for col in cols if 'STORE' in col and 'LOC' in col),
                       next((col for col in cols if 'STORELOCATION' in col), None))
 
-    # Find bus model column using the enhanced detection function
     bus_model_col = find_bus_model_column(original_columns)
 
     if status_callback:
@@ -445,8 +397,8 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
 
     # Create document with minimal margins
     doc = SimpleDocTemplate(output_pdf_path, pagesize=STICKER_PAGESIZE,
-                          topMargin=0.2*cm,  # Minimal top margin
-                          bottomMargin=(STICKER_HEIGHT - CONTENT_BOX_HEIGHT - 0.2*cm),  # Adjust bottom margin accordingly
+                          topMargin=0.2*cm,
+                          bottomMargin=(STICKER_HEIGHT - CONTENT_BOX_HEIGHT - 0.2*cm),
                           leftMargin=0.1*cm, rightMargin=0.1*cm)
 
     content_width = CONTENT_BOX_WIDTH - 0.2*cm
@@ -455,7 +407,6 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
     # Process each row as a single sticker
     total_rows = len(df)
     for index, row in df.iterrows():
-        # Update progress
         if status_callback:
             status_callback(f"Creating sticker {index+1} of {total_rows} ({int((index+1)/total_rows*100)}%)")
         
@@ -465,12 +416,10 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
         part_no = str(row[part_no_col])
         desc = str(row[desc_col])
         
-        # Extract QTY/BIN properly
         qty_bin = ""
         if qty_bin_col and qty_bin_col in row and pd.notna(row[qty_bin_col]):
             qty_bin = str(row[qty_bin_col])
             
-        # Extract QTY/VEH properly
         qty_veh = ""
         if qty_veh_col and qty_veh_col in row and pd.notna(row[qty_veh_col]):
             qty_veh = str(row[qty_veh_col])
@@ -479,10 +428,10 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
         store_location = str(row[store_loc_col]) if store_loc_col and store_loc_col in row else ""
         location_parts = parse_location_string(location_str)
 
-        # Use enhanced bus model detection
+        # Use enhanced bus model detection (now returns 135 KW, 60 KW, C, 4W)
         mtm_quantities = detect_bus_model_and_qty(row, qty_veh_col, bus_model_col)
 
-        # Generate QR code with part information
+        # Generate QR code
         qr_data = f"Part No: {part_no}\nDescription: {desc}\nLocation: {location_str}\n"
         qr_data += f"Store Location: {store_location}\nQTY/VEH: {qty_veh}\nQTY/BIN: {qty_bin}"
         
@@ -503,13 +452,12 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
             ["Qty/Bin", Paragraph(str(qty_bin), qty_style)]
         ]
 
-        # Create main table
         main_table = Table(main_table_data,
                          colWidths=[content_width/3, content_width*2/3],
                          rowHeights=[header_row_height, desc_row_height, qty_row_height])
 
         main_table.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 1.2, colors.Color(0, 0, 0, alpha=0.95)),  # Darker grid lines
+            ('GRID', (0, 0), (-1, -1), 1.2, colors.Color(0, 0, 0, alpha=0.95)),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
@@ -520,19 +468,13 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
 
         # Store Location section
         store_loc_label = Paragraph("Store Location", ParagraphStyle(
-        name='StoreLoc', fontName='Helvetica-Bold', fontSize=11, alignment=TA_CENTER
+            name='StoreLoc', fontName='Helvetica-Bold', fontSize=11, alignment=TA_CENTER
         ))
-        # Total width for the 7 inner columns (2/3 of full content width)
         inner_table_width = content_width * 2 / 3
-
-        # Define proportional widths - same as Line Location for consistency
         col_proportions = [1.5, 2.5, 0.7, 0.8, 0.8, 0.7, 0.9]
         total_proportion = sum(col_proportions)
-
-        # Calculate column widths based on proportions 
         inner_col_widths = [w * inner_table_width / total_proportion for w in col_proportions]
 
-        # Extract store location values from Excel data
         store_loc_values = extract_store_location_data_from_excel(row)
 
         store_loc_inner_table = Table(
@@ -541,10 +483,10 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
             rowHeights=[location_row_height]
         )
         store_loc_inner_table.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 1.2, colors.Color(0, 0, 0, alpha=0.95)),  # Darker grid lines
+            ('GRID', (0, 0), (-1, -1), 1.2, colors.Color(0, 0, 0, alpha=0.95)),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),  # Make store location values bold
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 9),
         ]))
         store_loc_table = Table(
@@ -553,7 +495,7 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
             rowHeights=[location_row_height]
         )
         store_loc_table.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 1.2, colors.Color(0, 0, 0, alpha=0.95)),  # Darker grid lines
+            ('GRID', (0, 0), (-1, -1), 1.2, colors.Color(0, 0, 0, alpha=0.95)),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]))
@@ -563,79 +505,92 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
         line_loc_label = Paragraph("Line Location", ParagraphStyle(
             name='LineLoc', fontName='Helvetica-Bold', fontSize=11, alignment=TA_CENTER
         ))
-        # Extract line location values from Excel data
         location_parts = extract_location_data_from_excel(row)
         location_parts = [
             str(int(float(val))) if isinstance(val, str) and re.match(r'^\d+\.0$', val) else val
             for val in location_parts
         ]
-        # Create the inner table
         line_loc_inner_table = Table(
             [location_parts],
             colWidths=inner_col_widths,
             rowHeights=[location_row_height]
         )
         line_loc_inner_table.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 1.2, colors.Color(0, 0, 0, alpha=0.95)),  # Darker grid lines
+            ('GRID', (0, 0), (-1, -1), 1.2, colors.Color(0, 0, 0, alpha=0.95)),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),  # Make line location values bold
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 9)
         ]))
-        # Wrap the label and the inner table in a containing table
         line_loc_table = Table(
             [[line_loc_label, line_loc_inner_table]],
             colWidths=[content_width/3, inner_table_width],
             rowHeights=[location_row_height]
         )
         line_loc_table.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 1.2, colors.Color(0, 0, 0, alpha=0.95)),  # Darker grid lines
+            ('GRID', (0, 0), (-1, -1), 1.2, colors.Color(0, 0, 0, alpha=0.95)),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]))
         elements.append(line_loc_table)
 
-        # Add smaller spacer between line location and bottom section
         elements.append(Spacer(1, 0.5*cm))
 
-        # Bottom section - Enhanced with intelligent bus model detection
-        mtm_box_width = 1.2*cm
+        # ─── Bottom section: MTM boxes now use 135 KW, 60 KW, C, 4W ───
+        # Make boxes slightly wider to accommodate longer labels
+        mtm_box_width = 1.8*cm   # wider than original 1.2cm to fit "135 KW"
         mtm_row_height = 1.5*cm
 
-        # Create MTM boxes with detected quantities
+        # Helper style for MTM header labels (smaller font to fit in box)
+        def mtm_label_style(name):
+            return ParagraphStyle(
+                name=name,
+                fontName='Helvetica-Bold',
+                fontSize=7,
+                alignment=TA_CENTER,
+                leading=8
+            )
+
+        def mtm_value_style(name):
+            return ParagraphStyle(
+                name=name,
+                fontName='Helvetica-Bold',
+                fontSize=10,
+                alignment=TA_CENTER
+            )
+
         position_matrix_data = [
-            ["4W", "3WS", "3WM", "3WC"],
+            # Header row — use Paragraphs so long labels wrap cleanly
             [
-                Paragraph(f"<b>{mtm_quantities['4W']}</b>", ParagraphStyle(
-                    name='Bold4W', fontName='Helvetica-Bold', fontSize=10, alignment=TA_CENTER
-                )) if mtm_quantities['4W'] else "",
-                Paragraph(f"<b>{mtm_quantities['3WS']}</b>", ParagraphStyle(
-                    name='Bold3WS', fontName='Helvetica-Bold', fontSize=10, alignment=TA_CENTER
-                )) if mtm_quantities['3WS'] else "",
-                Paragraph(f"<b>{mtm_quantities['3WM']}</b>", ParagraphStyle(
-                    name='Bold3WM', fontName='Helvetica-Bold', fontSize=10, alignment=TA_CENTER
-                )) if mtm_quantities['3WM'] else "",
-                Paragraph(f"<b>{mtm_quantities['3WC']}</b>", ParagraphStyle(
-                    name='Bold3WC', fontName='Helvetica-Bold', fontSize=10, alignment=TA_CENTER
-                )) if mtm_quantities['3WC'] else ""
+                Paragraph("135 KW", mtm_label_style('Hdr135')),
+                Paragraph("60 KW",  mtm_label_style('Hdr60')),
+                Paragraph("C",       mtm_label_style('HdrC')),
+                Paragraph("4W",      mtm_label_style('Hdr4W')),
+            ],
+            # Value row
+            [
+                Paragraph(f"<b>{mtm_quantities['135 KW']}</b>", mtm_value_style('Val135')) if mtm_quantities['135 KW'] else "",
+                Paragraph(f"<b>{mtm_quantities['60 KW']}</b>",  mtm_value_style('Val60'))  if mtm_quantities['60 KW']  else "",
+                Paragraph(f"<b>{mtm_quantities['C']}</b>",       mtm_value_style('ValC'))   if mtm_quantities['C']       else "",
+                Paragraph(f"<b>{mtm_quantities['4W']}</b>",      mtm_value_style('Val4W'))  if mtm_quantities['4W']      else "",
             ]
         ]
 
         mtm_table = Table(
             position_matrix_data,
-            colWidths=[mtm_box_width, mtm_box_width, mtm_box_width, mtm_box_width],
+            colWidths=[mtm_box_width] * 4,
             rowHeights=[mtm_row_height/2, mtm_row_height/2]
         )
 
         mtm_table.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 1.2, colors.Color(0, 0, 0, alpha=0.95)),  # Darker grid lines
+            ('GRID', (0, 0), (-1, -1), 1.2, colors.Color(0, 0, 0, alpha=0.95)),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
         ]))
 
-        # QR code with preserved size
+        # QR code
         qr_width = 2.2*cm
         qr_height = 2.2*cm
 
@@ -659,12 +614,10 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]))
 
-        # Adjust spacing for better layout
-        left_spacer_width = 0.3*cm
-        middle_spacer_width = 0.4*cm  # Reduced from calculated value to 0.3cm
+        left_spacer_width = 0.1*cm
+        middle_spacer_width = 0.2*cm
         right_spacer_width = content_width - (mtm_box_width * 4) - qr_width - left_spacer_width - middle_spacer_width
 
-        # Bottom section layout
         bottom_section_data = [
             ["", mtm_table, "", qr_table]
         ]
@@ -682,10 +635,8 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
 
         elements.append(bottom_section_table)
 
-        # Add all elements to the main list
         all_elements.extend(elements)
 
-        # Add page break if not the last row
         if index < len(df) - 1:
             all_elements.append(PageBreak())
 
@@ -715,7 +666,6 @@ def main():
         unsafe_allow_html=True
     )
     
-    # File upload
     uploaded_file = st.file_uploader(
         "Upload Excel or CSV file",
         type=['xlsx', 'xls', 'csv'],
@@ -723,14 +673,12 @@ def main():
     )
     
     if uploaded_file is not None:
-        # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx' if uploaded_file.name.endswith('.xlsx') else '.csv') as tmp_file:
             tmp_file.write(uploaded_file.getvalue())
             tmp_file_path = tmp_file.name
         
         st.success(f"File uploaded: {uploaded_file.name}")
         
-        # Preview data
         try:
             if uploaded_file.name.lower().endswith('.csv'):
                 df_preview = pd.read_csv(tmp_file_path)
@@ -739,29 +687,23 @@ def main():
             
             st.subheader("📊 Data Preview")
             st.dataframe(df_preview.head(10))
-            
             st.info(f"Total rows: {len(df_preview)}")
             
         except Exception as e:
             st.error(f"Error reading file: {e}")
             return
         
-        # Generate stickers button
         if st.button("🏷️ Generate Labels", type="primary"):
-            # Create output filename
             output_filename = f"sticker_labels_{uploaded_file.name.split('.')[0]}.pdf"
             
-            # Progress container
             progress_container = st.container()
             progress_bar = progress_container.progress(0)
             status_text = progress_container.empty()
             
             def update_status(message):
                 status_text.text(message)
-                # Update progress bar based on message content
                 if "Creating sticker" in message and "of" in message:
                     try:
-                        # Extract current/total from message
                         parts = message.split()
                         current = int(parts[2])
                         total = int(parts[4])
@@ -770,17 +712,14 @@ def main():
                     except:
                         pass
             
-            # Generate PDF
             try:
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_pdf:
                     pdf_path = generate_sticker_labels(tmp_file_path, tmp_pdf.name, update_status)
                     
                     if pdf_path:
-                        # Read the generated PDF
                         with open(pdf_path, 'rb') as pdf_file:
                             pdf_data = pdf_file.read()
                         
-                        # Download button
                         st.download_button(
                             label="📥 Download Sticker Labels PDF",
                             data=pdf_data,
@@ -791,7 +730,6 @@ def main():
                         
                         st.success("✅ Sticker labels generated successfully!")
                         
-                        # Clean up temporary files
                         try:
                             os.unlink(tmp_file_path)
                             os.unlink(pdf_path)
@@ -814,7 +752,7 @@ def main():
         'Bin Type': ['TOTE', 'BIN C', 'BIN A'],
         'Qty/bin': [360, 20, 120],
         'Qty/veh': [10, 5, 2],
-        'Bus model': ['3WC', '3WM', '3WS'],
+        'Bus model': ['135 KW', '60 KW', 'C'],   # ← updated sample values
         'Station No': ['CW40RH', 'CW40RH', 'CW40RH'],
         'Rack': ['R', 'R', 'R'],
         'Rack No (1st digit)': [0, 0, 0],
@@ -840,7 +778,7 @@ def main():
     - **Bin Type**: Type of bin (TOTE, BIN A, BIN B, BIN C, etc.)
     - **Qty/bin**: Quantity per bin
     - **Qty/veh**: Quantity per vehicle
-    - **Bus model**: Bus model type (3WC, 3WM, 3WS, 4W, etc.)
+    - **Bus model**: Bus model type (`135 KW`, `60 KW`, `C`, `4W`)
     - **Station No**: Station identifier
     - **Rack**: Rack identifier
     - **Rack No (1st digit)**: First digit of rack number
