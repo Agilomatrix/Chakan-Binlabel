@@ -89,10 +89,11 @@ def find_bus_model_column(df_columns):
 def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
     """
     Improved bus model detection that properly matches bus model to MTM box.
-    Returns a dictionary with keys '135 KW', '60 KW', 'C', '4W' and their respective quantities.
+    Returns a dictionary with keys 'P', 'S', 'M', '4TH' and their respective quantities.
+    Note: '4TH' is intentionally left blank/unused — it's a spare box on the sticker.
     """
     # Initialize result dictionary with new bus models
-    result = {'135 KW': '', '60 KW': '', 'C': '', '4W': ''}
+    result = {'P': '', 'S': '', 'M': '', '4TH': ''}
     
     # Get quantity value
     qty_veh = ""
@@ -103,18 +104,23 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
         return result
     
     # Method 1: Check if quantity already contains model info
-    # e.g., "135KW:2", "60KW: 3", "C: 5", "4W: 6"
+    # e.g., "P:2", "S: 3", "M: 5"
     qty_upper = qty_veh.upper()
 
-    # Check for "135 KW" or "135KW"
-    match = re.search(r'135\s*KW[:\-\s]*(\d+)', qty_upper)
+    # Check for "P"
+    match = re.search(r'\bP[:\-\s]*(\d+)', qty_upper)
     if match:
-        result['135 KW'] = match.group(1)
+        result['P'] = match.group(1)
 
-    # Check for "60 KW" or "60KW"
-    match = re.search(r'60\s*KW[:\-\s]*(\d+)', qty_upper)
+    # Check for "S"
+    match = re.search(r'\bS[:\-\s]*(\d+)', qty_upper)
     if match:
-        result['60 KW'] = match.group(1)
+        result['S'] = match.group(1)
+
+    # Check for "M"
+    match = re.search(r'\bM[:\-\s]*(\d+)', qty_upper)
+    if match:
+        result['M'] = match.group(1)
 
     # If any model-qty pairs found via Method 1, return early
     if any(result.values()):
@@ -126,19 +132,19 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
         bus_model_value = str(row[bus_model_col]).strip().upper()
         
         # Check for exact matches first
-        if re.search(r'135\s*KW', bus_model_value):
-            detected_model = '135 KW'
-        elif re.search(r'60\s*KW', bus_model_value):
-            detected_model = '60 KW'
-        elif bus_model_value in ['C']:
-            detected_model = 'C'
-        elif bus_model_value in ['4W', '4']:
-            detected_model = '4W'
+        if bus_model_value == 'P':
+            detected_model = 'P'
+        elif bus_model_value == 'S':
+            detected_model = 'S'
+        elif bus_model_value == 'M':
+            detected_model = 'M'
         # Check for word-boundary patterns
-        elif re.search(r'\b4W\b', bus_model_value):
-            detected_model = '4W'
-        elif re.search(r'\bC\b', bus_model_value):
-            detected_model = 'C'
+        elif re.search(r'\bP\b', bus_model_value):
+            detected_model = 'P'
+        elif re.search(r'\bS\b', bus_model_value):
+            detected_model = 'S'
+        elif re.search(r'\bM\b', bus_model_value):
+            detected_model = 'M'
     
     # If we found a model in the dedicated column, use it
     if detected_model:
@@ -160,35 +166,30 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
     # Search priority columns first
     for col in priority_columns:
         if pd.notna(row[col]):
-            value_str = str(row[col]).upper()
+            value_str = str(row[col]).strip().upper()
             
-            if re.search(r'135\s*KW', value_str):
-                result['135 KW'] = qty_veh
+            if value_str == 'P' or re.search(r'\bP\b', value_str):
+                result['P'] = qty_veh
                 return result
-            elif re.search(r'60\s*KW', value_str):
-                result['60 KW'] = qty_veh
+            elif value_str == 'S' or re.search(r'\bS\b', value_str):
+                result['S'] = qty_veh
                 return result
-            elif re.search(r'\bC\b', value_str):
-                result['C'] = qty_veh
-                return result
-            elif re.search(r'\b4W\b', value_str):
-                result['4W'] = qty_veh
+            elif value_str == 'M' or re.search(r'\bM\b', value_str):
+                result['M'] = qty_veh
                 return result
     
     # Method 4: Search in other columns as fallback
     detected_models = []
     for col in other_columns:
         if pd.notna(row[col]):
-            value_str = str(row[col]).upper()
+            value_str = str(row[col]).strip().upper()
             
-            if re.search(r'135\s*KW', value_str):
-                detected_models.append('135 KW')
-            elif re.search(r'60\s*KW', value_str):
-                detected_models.append('60 KW')
-            elif re.search(r'\bC\b', value_str):
-                detected_models.append('C')
-            elif re.search(r'\b4W\b', value_str):
-                detected_models.append('4W')
+            if value_str == 'P' or re.search(r'\bP\b', value_str):
+                detected_models.append('P')
+            elif value_str == 'S' or re.search(r'\bS\b', value_str):
+                detected_models.append('S')
+            elif value_str == 'M' or re.search(r'\bM\b', value_str):
+                detected_models.append('M')
     
     # Remove duplicates while preserving order
     detected_models = list(dict.fromkeys(detected_models))
@@ -202,17 +203,14 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
         if pd.notna(row[col]):
             value_str = str(row[col]).strip().upper()
             
-            if re.match(r'^135\s*KW$', value_str):
-                result['135 KW'] = qty_veh
+            if value_str == 'P':
+                result['P'] = qty_veh
                 return result
-            elif re.match(r'^60\s*KW$', value_str):
-                result['60 KW'] = qty_veh
+            elif value_str == 'S':
+                result['S'] = qty_veh
                 return result
-            elif value_str == 'C':
-                result['C'] = qty_veh
-                return result
-            elif value_str in ['4W', '4']:
-                result['4W'] = qty_veh
+            elif value_str == 'M':
+                result['M'] = qty_veh
                 return result
     
     # Method 6: If still no model detected, return empty (no boxes filled)
@@ -428,7 +426,7 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
         store_location = str(row[store_loc_col]) if store_loc_col and store_loc_col in row else ""
         location_parts = parse_location_string(location_str)
 
-        # Use enhanced bus model detection (now returns 135 KW, 60 KW, C, 4W)
+        # Use enhanced bus model detection (now returns P, S, M, 4TH)
         mtm_quantities = detect_bus_model_and_qty(row, qty_veh_col, bus_model_col)
 
         # Generate QR code
@@ -536,9 +534,8 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
 
         elements.append(Spacer(1, 0.5*cm))
 
-        # ─── Bottom section: MTM boxes now use 135 KW, 60 KW, C, 4W ───
-        # Make boxes slightly wider to accommodate longer labels
-        mtm_box_width = 1.60*cm  # slightly narrower while still fitting "135 KW"
+        # ─── Bottom section: MTM boxes now use P, S, M, and a blank 4th box ───
+        mtm_box_width = 1.60*cm
         mtm_row_height = 1.55*cm
 
         # Helper style for MTM header labels
@@ -560,19 +557,19 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
             )
 
         position_matrix_data = [
-            # Header row — use Paragraphs so long labels wrap cleanly
+            # Header row — P, S, M, and an intentionally blank 4th box
             [
-                Paragraph("135 KW", mtm_label_style('Hdr135')),
-                Paragraph("60 KW",  mtm_label_style('Hdr60')),
-                Paragraph("C",       mtm_label_style('HdrC')),
-                Paragraph("4W",      mtm_label_style('Hdr4W')),
+                Paragraph("P", mtm_label_style('HdrP')),
+                Paragraph("S", mtm_label_style('HdrS')),
+                Paragraph("M", mtm_label_style('HdrM')),
+                Paragraph("", mtm_label_style('Hdr4th')),
             ],
             # Value row
             [
-                Paragraph(f"<b>{mtm_quantities['135 KW']}</b>", mtm_value_style('Val135')) if mtm_quantities['135 KW'] else "",
-                Paragraph(f"<b>{mtm_quantities['60 KW']}</b>",  mtm_value_style('Val60'))  if mtm_quantities['60 KW']  else "",
-                Paragraph(f"<b>{mtm_quantities['C']}</b>",       mtm_value_style('ValC'))   if mtm_quantities['C']       else "",
-                Paragraph(f"<b>{mtm_quantities['4W']}</b>",      mtm_value_style('Val4W'))  if mtm_quantities['4W']      else "",
+                Paragraph(f"<b>{mtm_quantities['P']}</b>", mtm_value_style('ValP')) if mtm_quantities['P'] else "",
+                Paragraph(f"<b>{mtm_quantities['S']}</b>", mtm_value_style('ValS')) if mtm_quantities['S'] else "",
+                Paragraph(f"<b>{mtm_quantities['M']}</b>", mtm_value_style('ValM')) if mtm_quantities['M'] else "",
+                "",
             ]
         ]
 
@@ -752,7 +749,7 @@ def main():
         'Bin Type': ['TOTE', 'BIN C', 'BIN A'],
         'Qty/bin': [360, 20, 120],
         'Qty/veh': [10, 5, 2],
-        'Bus model': ['135 KW', '60 KW', 'C'],   # ← updated sample values
+        'Bus model': ['P', 'S', 'M'],   # ← updated sample values
         'Station No': ['CW40RH', 'CW40RH', 'CW40RH'],
         'Rack': ['R', 'R', 'R'],
         'Rack No (1st digit)': [0, 0, 0],
@@ -778,7 +775,7 @@ def main():
     - **Bin Type**: Type of bin (TOTE, BIN A, BIN B, BIN C, etc.)
     - **Qty/bin**: Quantity per bin
     - **Qty/veh**: Quantity per vehicle
-    - **Bus model**: Bus model type (`135 KW`, `60 KW`, `C`, `4W`)
+    - **Bus model**: Bus model type (`P`, `S`, `M`) — the 4th MTM box on the sticker is left blank
     - **Station No**: Station identifier
     - **Rack**: Rack identifier
     - **Rack No (1st digit)**: First digit of rack number
