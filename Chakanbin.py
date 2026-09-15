@@ -55,7 +55,7 @@ def find_bus_model_column(df_columns):
     Enhanced function to find the bus model column with better detection
     """
     cols = [str(col).upper() for col in df_columns]
-    
+
     # Priority order for bus model column detection
     patterns = [
         # Exact matches (highest priority)
@@ -78,12 +78,12 @@ def find_bus_model_column(df_columns):
         lambda col: 'BUS' in col,
         lambda col: 'VEHICLE' in col,
     ]
-    
+
     for pattern in patterns:
         for i, col in enumerate(cols):
             if pattern(col):
                 return df_columns[i]  # Return original column name
-    
+
     return None
 
 def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
@@ -94,15 +94,15 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
     """
     # Initialize result dictionary with new bus models
     result = {'P': '', 'S': '', 'M': '', '4TH': ''}
-    
+
     # Get quantity value
     qty_veh = ""
     if qty_veh_col and qty_veh_col in row and pd.notna(row[qty_veh_col]):
         qty_veh = str(row[qty_veh_col]).strip()
-    
+
     if not qty_veh:
         return result
-    
+
     # Method 1: Check if quantity already contains model info
     # e.g., "P:2", "S: 3", "M: 5"
     qty_upper = qty_veh.upper()
@@ -130,7 +130,7 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
     detected_model = None
     if bus_model_col and bus_model_col in row and pd.notna(row[bus_model_col]):
         bus_model_value = str(row[bus_model_col]).strip().upper()
-        
+
         # Check for exact matches first
         if bus_model_value == 'P':
             detected_model = 'P'
@@ -145,16 +145,16 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
             detected_model = 'S'
         elif re.search(r'\bM\b', bus_model_value):
             detected_model = 'M'
-    
+
     # If we found a model in the dedicated column, use it
     if detected_model:
         result[detected_model] = qty_veh
         return result
-    
+
     # Method 3: Search through all columns systematically with priority
     priority_columns = []
     other_columns = []
-    
+
     for col in row.index:
         if pd.notna(row[col]):
             col_upper = str(col).upper()
@@ -162,12 +162,12 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
                 priority_columns.append(col)
             else:
                 other_columns.append(col)
-    
+
     # Search priority columns first
     for col in priority_columns:
         if pd.notna(row[col]):
             value_str = str(row[col]).strip().upper()
-            
+
             if value_str == 'P' or re.search(r'\bP\b', value_str):
                 result['P'] = qty_veh
                 return result
@@ -177,32 +177,32 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
             elif value_str == 'M' or re.search(r'\bM\b', value_str):
                 result['M'] = qty_veh
                 return result
-    
+
     # Method 4: Search in other columns as fallback
     detected_models = []
     for col in other_columns:
         if pd.notna(row[col]):
             value_str = str(row[col]).strip().upper()
-            
+
             if value_str == 'P' or re.search(r'\bP\b', value_str):
                 detected_models.append('P')
             elif value_str == 'S' or re.search(r'\bS\b', value_str):
                 detected_models.append('S')
             elif value_str == 'M' or re.search(r'\bM\b', value_str):
                 detected_models.append('M')
-    
+
     # Remove duplicates while preserving order
     detected_models = list(dict.fromkeys(detected_models))
-    
+
     if detected_models:
         result[detected_models[0]] = qty_veh
         return result
-    
+
     # Method 5: Last resort - exact cell value match
     for col in row.index:
         if pd.notna(row[col]):
             value_str = str(row[col]).strip().upper()
-            
+
             if value_str == 'P':
                 result['P'] = qty_veh
                 return result
@@ -212,7 +212,7 @@ def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
             elif value_str == 'M':
                 result['M'] = qty_veh
                 return result
-    
+
     # Method 6: If still no model detected, return empty (no boxes filled)
     return result
 
@@ -229,13 +229,13 @@ def generate_qr_code(data_string):
         )
         qr.add_data(data_string)
         qr.make(fit=True)
-        
+
         qr_img = qr.make_image(fill_color="black", back_color="white")
-        
+
         img_buffer = BytesIO()
         qr_img.save(img_buffer, format='PNG')
         img_buffer.seek(0)
-        
+
         return Image(img_buffer, width=2.2*cm, height=2.2*cm)
     except Exception as e:
         st.error(f"Error generating QR code: {e}")
@@ -259,7 +259,7 @@ def parse_location_string(location_str):
 def extract_location_data_from_excel(row_data):
     """Extract location data from Excel row for Line Location"""
     available_cols = list(row_data.index) if hasattr(row_data, 'index') else []
-    
+
     def find_column_value(possible_names, default=''):
         for name in possible_names:
             if name in row_data:
@@ -270,7 +270,7 @@ def extract_location_data_from_excel(row_data):
                     val = row_data[col]
                     return str(val) if pd.notna(val) and str(val).lower() != 'nan' else default
         return default
-    
+
     bus_model = find_column_value(['Bus Model', 'Bus model', 'BUS MODEL', 'BUSMODEL', 'Bus_Model'])
     station_no = find_column_value(['Station No', 'Station no', 'STATION NO', 'STATIONNO', 'Station_No'])
     rack = find_column_value(['Rack', 'RACK', 'rack'])
@@ -278,7 +278,7 @@ def extract_location_data_from_excel(row_data):
     rack_no_2nd = find_column_value(['Rack No (2nd digit)', 'RACK NO (2nd digit)', 'Rack_No_2nd', 'RACK_NO_2ND'])
     level = find_column_value(['Level', 'LEVEL', 'level'])
     cell = find_column_value(['Cell', 'CELL', 'cell'])
-    
+
     return [bus_model, station_no, rack, rack_no_1st, rack_no_2nd, level, cell]
 
 def extract_store_location_data_from_excel(row_data):
@@ -288,7 +288,7 @@ def extract_store_location_data_from_excel(row_data):
         if pd.notna(val) and str(val).lower() != 'nan':
             return str(val)
         return default
-    
+
     zone = get_clean_value('ABB ZONE', '')
     location = get_clean_value('ABB LOCATION', '')
     floor = get_clean_value('ABB FLOOR', '')
@@ -296,7 +296,7 @@ def extract_store_location_data_from_excel(row_data):
     level_in_rack = get_clean_value('ABB LEVEL IN RACK', '')
     cell = get_clean_value('ABB CELL', '')
     no = get_clean_value('ABB NO', '')
-    
+
     return [zone, location, floor, rack_no, level_in_rack, cell, no]
 
 def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=None):
@@ -359,13 +359,13 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
     desc_col = next((col for col in cols if 'DESC' in col),
                    next((col for col in cols if 'NAME' in col), cols[1] if len(cols) > 1 else part_no_col))
 
-    qty_bin_col = next((col for col in cols if 'QTY/BIN' in col or 'QTY_BIN' in col or 'QTYBIN' in col), 
+    qty_bin_col = next((col for col in cols if 'QTY/BIN' in col or 'QTY_BIN' in col or 'QTYBIN' in col),
                   next((col for col in cols if 'QTY' in col and 'BIN' in col), None))
-    
+
     if not qty_bin_col:
         qty_bin_col = next((col for col in cols if 'QTY' in col),
                       next((col for col in cols if 'QUANTITY' in col), None))
-  
+
     loc_col = next((col for col in cols if 'LOC' in col or 'POS' in col or 'LOCATION' in col),
                    cols[2] if len(cols) > 2 else desc_col)
 
@@ -407,21 +407,21 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
     for index, row in df.iterrows():
         if status_callback:
             status_callback(f"Creating sticker {index+1} of {total_rows} ({int((index+1)/total_rows*100)}%)")
-        
+
         elements = []
 
         # Extract data
         part_no = str(row[part_no_col])
         desc = str(row[desc_col])
-        
+
         qty_bin = ""
         if qty_bin_col and qty_bin_col in row and pd.notna(row[qty_bin_col]):
             qty_bin = str(row[qty_bin_col])
-            
+
         qty_veh = ""
         if qty_veh_col and qty_veh_col in row and pd.notna(row[qty_veh_col]):
             qty_veh = str(row[qty_veh_col])
-        
+
         location_str = str(row[loc_col]) if loc_col and loc_col in row else ""
         store_location = str(row[store_loc_col]) if store_loc_col and store_loc_col in row else ""
         location_parts = parse_location_string(location_str)
@@ -432,11 +432,11 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
         # Generate QR code
         qr_data = f"Part No: {part_no}\nDescription: {desc}\nLocation: {location_str}\n"
         qr_data += f"Store Location: {store_location}\nQTY/VEH: {qty_veh}\nQTY/BIN: {qty_bin}"
-        
+
         qr_image = generate_qr_code(qr_data)
         if status_callback and qr_image:
             status_callback(f"QR code generated for part: {part_no}")
-        
+
         # Define row heights
         header_row_height = 0.9*cm
         desc_row_height = 1.0*cm
@@ -508,6 +508,17 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
             str(int(float(val))) if isinstance(val, str) and re.match(r'^\d+\.0$', val) else val
             for val in location_parts
         ]
+
+        # ─── Common-part handling ───
+        # If more than one bus model (P/S/M) has a quantity filled in on this
+        # sticker (e.g. P: 1 and S: 4 together), the part is shared/common
+        # across those models rather than belonging to just one. In that case
+        # show "C" (Common) in the Bus Model slot of Line Location instead of
+        # whatever single model value happened to be in the source column.
+        filled_models = [k for k in ('P', 'S', 'M') if mtm_quantities.get(k)]
+        if len(filled_models) > 1:
+            location_parts[0] = 'C'
+
         line_loc_inner_table = Table(
             [location_parts],
             colWidths=inner_col_widths,
@@ -655,48 +666,48 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
 
 def main():
     st.set_page_config(page_title="Chakan Bin Label Generator", layout="wide")
-    
+
     st.title("🏷️ Chakan Bin Label Generator")
     st.markdown(
         "<p style='font-size:18px; font-style:italic; margin-top:-10px; text-align:left;'>"
         "Designed and Developed by Agilomatrix</p>",
         unsafe_allow_html=True
     )
-    
+
     uploaded_file = st.file_uploader(
         "Upload Excel or CSV file",
         type=['xlsx', 'xls', 'csv'],
         help="Select a file containing part numbers, descriptions, and location data"
     )
-    
+
     if uploaded_file is not None:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx' if uploaded_file.name.endswith('.xlsx') else '.csv') as tmp_file:
             tmp_file.write(uploaded_file.getvalue())
             tmp_file_path = tmp_file.name
-        
+
         st.success(f"File uploaded: {uploaded_file.name}")
-        
+
         try:
             if uploaded_file.name.lower().endswith('.csv'):
                 df_preview = pd.read_csv(tmp_file_path)
             else:
                 df_preview = pd.read_excel(tmp_file_path)
-            
+
             st.subheader("📊 Data Preview")
             st.dataframe(df_preview.head(10))
             st.info(f"Total rows: {len(df_preview)}")
-            
+
         except Exception as e:
             st.error(f"Error reading file: {e}")
             return
-        
+
         if st.button("🏷️ Generate Labels", type="primary"):
             output_filename = f"sticker_labels_{uploaded_file.name.split('.')[0]}.pdf"
-            
+
             progress_container = st.container()
             progress_bar = progress_container.progress(0)
             status_text = progress_container.empty()
-            
+
             def update_status(message):
                 status_text.text(message)
                 if "Creating sticker" in message and "of" in message:
@@ -708,15 +719,15 @@ def main():
                         progress_bar.progress(progress)
                     except:
                         pass
-            
+
             try:
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_pdf:
                     pdf_path = generate_sticker_labels(tmp_file_path, tmp_pdf.name, update_status)
-                    
+
                     if pdf_path:
                         with open(pdf_path, 'rb') as pdf_file:
                             pdf_data = pdf_file.read()
-                        
+
                         st.download_button(
                             label="📥 Download Sticker Labels PDF",
                             data=pdf_data,
@@ -724,23 +735,23 @@ def main():
                             mime="application/pdf",
                             type="primary"
                         )
-                        
+
                         st.success("✅ Sticker labels generated successfully!")
-                        
+
                         try:
                             os.unlink(tmp_file_path)
                             os.unlink(pdf_path)
                         except:
                             pass
-                    
+
             except Exception as e:
                 st.error(f"Error generating stickers: {e}")
                 import traceback
                 st.code(traceback.format_exc())
-    
+
     else:
         st.info("👆 Please upload an Excel or CSV file to get started")
-    
+
     # Show sample data format
     st.subheader("📋 Reference For Data Format")
     sample_data = {
@@ -764,10 +775,10 @@ def main():
         'ABB CELL': [0, 0, 0],
         'ABB NO': [1, 4, 5],
     }
-    
+
     sample_df = pd.DataFrame(sample_data)
     st.dataframe(sample_df)
-    
+
     st.markdown("""
     **Column Requirements:**
     - **Part No**: Part number or identifier
@@ -789,10 +800,10 @@ def main():
     - **ABB LEVEL IN RACK**: ABB level in rack
     - **ABB CELL**: ABB cell number
     - **ABB NO**: ABB number
-    
+
     ℹ️ Column names are case-insensitive and can contain variations (e.g., 'Part No', 'PART_NO', 'part_no', etc.)
-    
-    📍 **Location Information**: The system will automatically combine location fields to create a comprehensive storage location identifier.
+
+    📍 **Location Information**: The system will automatically combine location fields to create a comprehensive storage location identifier. If a part's MTM boxes show quantities for more than one bus model (e.g. P and S both filled in), the Bus Model field in Line Location will automatically show **"C"** (Common) instead of a single model.
     """)
 
 if __name__ == "__main__":
