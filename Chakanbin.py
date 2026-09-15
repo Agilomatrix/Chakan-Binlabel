@@ -621,16 +621,18 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
             for val in location_parts
         ]
 
-        # ─── Common-part handling ───
-        # If more than one bus model (P/S/M) has a quantity filled in on this
-        # sticker (e.g. P: 1 and S: 4 together — whether that came from a single
-        # merged row, or from multiple rows for the same Part No that got merged
-        # into this one sticker above), show "C" (Common) in the Bus Model slot
-        # of Line Location instead of whatever single model value happened to be
-        # in the source column.
+        # ─── Bus Model handling in Line Location ───
+        # Derive the Bus Model slot directly from which MTM boxes are filled,
+        # rather than relying on a separate 'Bus Model' text column (which
+        # doesn't exist when using dedicated P/S/M quantity columns):
+        #   - exactly one model filled (e.g. only M: 1)      -> show that model, "M"
+        #   - more than one model filled (e.g. P: 2, S: 4)   -> show "C" (Common)
+        #   - no model filled                                 -> leave blank
         filled_models = [k for k in ('P', 'S', 'M') if mtm_quantities.get(k)]
         if len(filled_models) > 1:
             location_parts[0] = 'C'
+        elif len(filled_models) == 1:
+            location_parts[0] = filled_models[0]
 
         line_loc_inner_table = Table(
             [location_parts],
