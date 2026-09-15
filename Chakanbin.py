@@ -86,11 +86,77 @@ def find_bus_model_column(df_columns):
 
     return None
 
+def find_dedicated_model_columns(cols_upper):
+    """
+    Look for dedicated per-model quantity columns named exactly 'P', 'S', 'M'
+    (case-insensitive, whitespace-trimmed). These sheets carry the quantity for
+    each model directly in its own column, e.g.:
+
+        Part No | Part Desc | M | S | P | Qty/bin | Qty/veh | ...
+
+    Returns a dict like {'P': 'P', 'S': 'S', 'M': 'M'} containing only the
+    keys that were actually found (so it can be empty on older sheets).
+    cols_upper should be the already-uppercased column list of the dataframe.
+    """
+    found = {}
+    for key in ('P', 'S', 'M'):
+        if key in cols_upper:
+            found[key] = key
+    return found
+
+def format_num(val):
+    """Format a numeric value without a trailing '.0', otherwise return str(val)."""
+    try:
+        f = float(val)
+        if f == int(f):
+            return str(int(f))
+        return str(f)
+    except (ValueError, TypeError):
+        return str(val)
+
+def get_row_mtm_from_dedicated_columns(row, dedicated_cols):
+    """
+    Read P/S/M quantities directly from dedicated columns for a single row.
+    Empty/NaN cells are left blank. '4TH' box is always left blank (spare box).
+    """
+    result = {'P': '', 'S': '', 'M': '', '4TH': ''}
+    for key, col in dedicated_cols.items():
+        if col in row and pd.notna(row[col]) and str(row[col]).strip() != '':
+            result[key] = format_num(row[col])
+    return result
+
+def merge_group_mtm(mtm_list):
+    """
+    Merge the P/S/M quantities of every row that belongs to the same Part No
+    into a single dict, so a part split across multiple rows (one row per
+    model) ends up on ONE sticker instead of several. If more than one row
+    supplies a value for the same model box, the quantities are summed.
+    """
+    merged = {'P': '', 'S': '', 'M': '', '4TH': ''}
+    for entry in mtm_list:
+        for key in ('P', 'S', 'M'):
+            val = entry.get(key, '')
+            if val == '' or val is None:
+                continue
+            if merged[key] == '':
+                merged[key] = val
+            else:
+                try:
+                    merged[key] = format_num(float(merged[key]) + float(val))
+                except (ValueError, TypeError):
+                    # non-numeric values - just concatenate rather than lose data
+                    merged[key] = f"{merged[key]}+{val}"
+    return merged
+
 def detect_bus_model_and_qty(row, qty_veh_col, bus_model_col=None):
     """
     Improved bus model detection that properly matches bus model to MTM box.
     Returns a dictionary with keys 'P', 'S', 'M', '4TH' and their respective quantities.
     Note: '4TH' is intentionally left blank/unused — it's a spare box on the sticker.
+
+    This is the ORIGINAL/legacy detection path, used only when the sheet has
+    no dedicated P/S/M columns (see find_dedicated_model_columns / the
+    use_dedicated_model_cols flag in generate_sticker_labels).
     """
     # Initialize result dictionary with new bus models
     result = {'P': '', 'S': '', 'M': '', '4TH': ''}
@@ -376,6 +442,10 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
 
     bus_model_col = find_bus_model_column(original_columns)
 
+    # NEW: detect dedicated per-model quantity columns (exact 'P' / 'S' / 'M' headers)
+    dedicated_model_cols = find_dedicated_model_columns(cols)
+    use_dedicated_model_cols = len(dedicated_model_cols) > 0
+
     if status_callback:
         status_callback(f"Using columns: Part No: {part_no_col}, Description: {desc_col}, Location: {loc_col}, Qty/Bin: {qty_bin_col}")
         if qty_veh_col:
@@ -384,6 +454,10 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
             status_callback(f"Store Location Column: {store_loc_col}")
         if bus_model_col:
             status_callback(f"Bus Model Column: {bus_model_col}")
+        if use_dedicated_model_cols:
+            status_callback(f"Dedicated model quantity columns found: {list(dedicated_model_cols.keys())} — using these directly for MTM boxes")
+        else:
+            status_callback("No dedicated P/S/M columns found — falling back to legacy bus-model detection")
     else:
         st.write(f"Using columns: Part No: {part_no_col}, Description: {desc_col}, Location: {loc_col}, Qty/Bin: {qty_bin_col}")
         if qty_veh_col:
@@ -392,6 +466,45 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
             st.write(f"Store Location Column: {store_loc_col}")
         if bus_model_col:
             st.write(f"Bus Model Column: {bus_model_col}")
+        if use_dedicated_model_cols:
+            st.write(f"Dedicated model quantity columns found: {list(dedicated_model_cols.keys())} — using these directly for MTM boxes")
+        else:
+            st.write("No dedicated P/S/M columns found — falling back to legacy bus-model detection")
+
+    # ─── Group rows by Part No so the same part never prints on more than one sticker ───
+    # Works for BOTH formats:
+    #  - New format: dedicated P/S/M columns already on one row (or split across rows)
+    #  - Old format: single 'Bus model' + 'Qty/veh' columns, possibly one row per model
+    # Whichever rows share the same Part No get merged into a single sticker, and if the
+    # merged result ends up with more than one model filled in, the Bus Model shown in
+    # Line Location becomes "C" (Common) — same rule as before, just applied post-merge.
+    groups = {}
+    group_order = []
+    for _, row in df.iterrows():
+        part_key_raw = row[part_no_col] if part_no_col in row else ''
+        part_key = str(part_key_raw).strip().upper() if pd.notna(part_key_raw) else ''
+
+        if use_dedicated_model_cols:
+            row_mtm = get_row_mtm_from_dedicated_columns(row, dedicated_model_cols)
+        else:
+            row_mtm = detect_bus_model_and_qty(row, qty_veh_col, bus_model_col)
+
+        if part_key not in groups:
+            groups[part_key] = {'template_row': row, 'mtm_list': [row_mtm]}
+            group_order.append(part_key)
+        else:
+            groups[part_key]['mtm_list'].append(row_mtm)
+
+    sticker_entries = []  # list of (template_row, merged_mtm_quantities)
+    for part_key in group_order:
+        g = groups[part_key]
+        merged_mtm = merge_group_mtm(g['mtm_list'])
+        sticker_entries.append((g['template_row'], merged_mtm))
+
+    if status_callback:
+        status_callback(f"{len(df)} data row(s) merged into {len(sticker_entries)} sticker(s) by Part No")
+    else:
+        st.write(f"{len(df)} data row(s) merged into {len(sticker_entries)} sticker(s) by Part No")
 
     # Create document with minimal margins
     doc = SimpleDocTemplate(output_pdf_path, pagesize=STICKER_PAGESIZE,
@@ -402,9 +515,9 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
     content_width = CONTENT_BOX_WIDTH - 0.2*cm
     all_elements = []
 
-    # Process each row as a single sticker
-    total_rows = len(df)
-    for index, row in df.iterrows():
+    # Process each merged group as a single sticker
+    total_rows = len(sticker_entries)
+    for index, (row, mtm_quantities) in enumerate(sticker_entries):
         if status_callback:
             status_callback(f"Creating sticker {index+1} of {total_rows} ({int((index+1)/total_rows*100)}%)")
 
@@ -426,8 +539,7 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
         store_location = str(row[store_loc_col]) if store_loc_col and store_loc_col in row else ""
         location_parts = parse_location_string(location_str)
 
-        # Use enhanced bus model detection (now returns P, S, M, 4TH)
-        mtm_quantities = detect_bus_model_and_qty(row, qty_veh_col, bus_model_col)
+        # mtm_quantities already computed above (per-group, merged across rows)
 
         # Generate QR code
         qr_data = f"Part No: {part_no}\nDescription: {desc}\nLocation: {location_str}\n"
@@ -511,10 +623,11 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
 
         # ─── Common-part handling ───
         # If more than one bus model (P/S/M) has a quantity filled in on this
-        # sticker (e.g. P: 1 and S: 4 together), the part is shared/common
-        # across those models rather than belonging to just one. In that case
-        # show "C" (Common) in the Bus Model slot of Line Location instead of
-        # whatever single model value happened to be in the source column.
+        # sticker (e.g. P: 1 and S: 4 together — whether that came from a single
+        # merged row, or from multiple rows for the same Part No that got merged
+        # into this one sticker above), show "C" (Common) in the Bus Model slot
+        # of Line Location instead of whatever single model value happened to be
+        # in the source column.
         filled_models = [k for k in ('P', 'S', 'M') if mtm_quantities.get(k)]
         if len(filled_models) > 1:
             location_parts[0] = 'C'
@@ -645,7 +758,7 @@ def generate_sticker_labels(excel_file_path, output_pdf_path, status_callback=No
 
         all_elements.extend(elements)
 
-        if index < len(df) - 1:
+        if index < total_rows - 1:
             all_elements.append(PageBreak())
 
     # Build the PDF
@@ -754,13 +867,21 @@ def main():
 
     # Show sample data format
     st.subheader("📋 Reference For Data Format")
+    st.markdown(
+        "**Recommended format (dedicated M / S / P columns):** put each model's "
+        "quantity in its own column called exactly `M`, `S`, or `P`, and leave the "
+        "cell blank for models that don't apply to that part. Same Part No can "
+        "appear more than once (once per model) — the app merges those rows into "
+        "one sticker automatically."
+    )
     sample_data = {
         'Part No': ['08-DRA-14-02', 'P0012124-07', 'P0012126-07'],
         'Part Desc': ['BELLOW ASSY. WITH RETAINING CLIP', 'GUARD RING (hirkesh)', 'GUARD RING SEAL (hirkesh)'],
-        'Bin Type': ['TOTE', 'BIN C', 'BIN A'],
+        'M': [1, '', ''],
+        'S': ['', '', 1],
+        'P': ['', 1, 1],
         'Qty/bin': [360, 20, 120],
         'Qty/veh': [10, 5, 2],
-        'Bus model': ['P', 'S', 'M'],   # ← updated sample values
         'Station No': ['CW40RH', 'CW40RH', 'CW40RH'],
         'Rack': ['R', 'R', 'R'],
         'Rack No (1st digit)': [0, 0, 0],
@@ -781,12 +902,12 @@ def main():
 
     st.markdown("""
     **Column Requirements:**
-    - **Part No**: Part number or identifier
+    - **Part No**: Part number or identifier — parts that repeat across rows are merged into ONE sticker
     - **Part Desc**: Part description
-    - **Bin Type**: Type of bin (TOTE, BIN A, BIN B, BIN C, etc.)
+    - **M / S / P**: One quantity column per bus model (recommended). Leave blank where a model doesn't apply. The 4th MTM box on the sticker always stays blank.
     - **Qty/bin**: Quantity per bin
     - **Qty/veh**: Quantity per vehicle
-    - **Bus model**: Bus model type (`P`, `S`, `M`) — the 4th MTM box on the sticker is left blank
+    - *(Legacy alternative)* **Bus model** + **Qty/veh**: a single model-letter column (`P`/`S`/`M`) plus one quantity column — still supported if your sheet doesn't have dedicated M/S/P columns
     - **Station No**: Station identifier
     - **Rack**: Rack identifier
     - **Rack No (1st digit)**: First digit of rack number
@@ -803,7 +924,9 @@ def main():
 
     ℹ️ Column names are case-insensitive and can contain variations (e.g., 'Part No', 'PART_NO', 'part_no', etc.)
 
-    📍 **Location Information**: The system will automatically combine location fields to create a comprehensive storage location identifier. If a part's MTM boxes show quantities for more than one bus model (e.g. P and S both filled in), the Bus Model field in Line Location will automatically show **"C"** (Common) instead of a single model.
+    📍 **Location Information**: The system will automatically combine location fields to create a comprehensive storage location identifier.
+
+    🔗 **One sticker per Part No**: If the same Part No appears on more than one row (e.g. one row per bus model), those rows are merged into a single sticker — you will never get duplicate stickers for the same part. If the merged sticker ends up with quantities in more than one model box (P/S/M), the Bus Model field in Line Location automatically shows **"C"** (Common).
     """)
 
 if __name__ == "__main__":
